@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using CaminhoLivre.Api.Auth;
 using CaminhoLivre.Api.Contracts;
 using CaminhoLivre.Api.Data;
 using CaminhoLivre.Api.Domain;
@@ -15,6 +17,42 @@ public class ReporteService(AppDbContext db, TimeProvider relogio)
 
     public Task<Usuario?> BuscarUsuarioAsync(long usuarioId) =>
         db.Usuarios.AsNoTracking().FirstOrDefaultAsync(u => u.Id == usuarioId);
+
+    // O cadastro é feito na API Java. Se o token é válido (assinado com a JWT_SECRET) mas o usuário
+    // ainda não está na base desta API, ele é registrado na hora com os dados do próprio token.
+    public async Task<Usuario?> ObterOuRegistrarUsuarioAsync(ClaimsPrincipal principal)
+    {
+        var id = principal.ObterUsuarioId();
+        var existente = await BuscarUsuarioAsync(id);
+        if (existente is not null)
+        {
+            return existente;
+        }
+
+        var nome = principal.FindFirstValue("name");
+        var usuario = new Usuario
+        {
+            Id = id,
+            Nome = string.IsNullOrWhiteSpace(nome) ? $"Usuário {id}" : nome.Trim()[..Math.Min(nome.Trim().Length, 120)],
+            Email = $"usuario{id}@voz-e-via.local",
+            Role = principal.FindFirstValue("role") ?? Papeis.Cidadao,
+            CriadoEm = Agora
+        };
+
+        db.Usuarios.Add(usuario);
+        try
+        {
+            await db.SaveChangesAsync();
+            db.Entry(usuario).State = EntityState.Detached;
+            return usuario;
+        }
+        catch (DbUpdateException)
+        {
+            // Duas requisições do mesmo usuário novo ao mesmo tempo: a outra já registrou.
+            db.ChangeTracker.Clear();
+            return await BuscarUsuarioAsync(id);
+        }
+    }
 
     public async Task<Reporte> CriarAsync(long usuarioId, Categoria categoria, CriarReporteRequest request)
     {

@@ -48,7 +48,7 @@ public static class ReporteEndpoints
                 }
 
                 var usuarioId = user.ObterUsuarioId();
-                if (await service.BuscarUsuarioAsync(usuarioId) is null)
+                if (await service.ObterOuRegistrarUsuarioAsync(user) is null)
                 {
                     return Results.Unauthorized();
                 }
