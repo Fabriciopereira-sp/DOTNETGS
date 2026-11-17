@@ -49,7 +49,7 @@ public static class BancoDeDadosExtensions
         }
 
         await db.Database.EnsureCreatedAsync();
-        await DbSeed.PopularAsync(db);
+        await DbSeed.PopularAsync(db, incluirUsuariosDeTeste: db.Database.IsSqlite());
     }
 
     private static string ConexaoObrigatoria(IConfiguration config, string nome) =>

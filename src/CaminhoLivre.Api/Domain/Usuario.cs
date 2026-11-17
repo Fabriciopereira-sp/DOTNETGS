@@ -1,8 +1,10 @@
 namespace CaminhoLivre.Api.Domain;
 
-// Tabela pertence à API Java (cadastro e login). A API .NET apenas lê.
+// Cópia local de quem usa esta API. O cadastro e o login ficam na API Java (tabela usuarios no Azure SQL);
+// aqui o usuário é registrado no primeiro uso, com os dados do token. OrgaoId só existe para o GESTOR.
 public class Usuario
 {
+    // Mesmo ID da API Java (claim "sub"), nunca gerado aqui.
     public long Id { get; set; }
     public string Nome { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;

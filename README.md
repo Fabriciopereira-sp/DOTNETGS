@@ -38,7 +38,8 @@ flowchart LR
 ```
 
 - O **login** fica na API Java, que emite o token. Esta API **valida** o mesmo token (mesma chave, emissor e público), então o usuário faz login uma vez e usa as duas APIs.
-- O usuário é sempre identificado pelo token (claim `sub`), nunca por um ID enviado no corpo da requisição.
+- O usuário é sempre identificado pelo token (claim `sub`), nunca por um ID enviado no corpo da requisição. No primeiro uso ele é registrado em `VV_USUARIO` com **o mesmo ID da API Java** (a coluna não é autoincremento).
+- Papéis: `CIDADAO` e `CUIDADOR` (os dois que a API Java cadastra) abrem e acompanham reportes; `GESTOR` atende a fila do órgão.
 - As tabelas seguem o contrato do banco do grupo (prefixo `VV_`). No Oracle elas são criadas pelo script do grupo, sem migrations.
 
 Organização do código (`src/CaminhoLivre.Api`):
@@ -59,7 +60,7 @@ Organização do código (`src/CaminhoLivre.Api`):
 | Requisito | Como foi atendido |
 |---|---|
 | Minimal API RESTful, validações, códigos HTTP e Swagger | Endpoints em `Endpoints/`, validações em `Validation/`, respostas 200, 201, 204, 400, 401, 403, 404, 409, 422 e 429 documentadas no Swagger |
-| JWT protegendo endpoints | Políticas `Cidadao` e `Gestor`; o token é validado (assinatura, emissor, público e validade) |
+| JWT protegendo endpoints | Políticas `Solicitante` (CIDADAO ou CUIDADOR) e `Gestor`; o token é validado (assinatura, emissor, público, validade e se a conta foi excluída) |
 | Idempotência | Cabeçalho `Idempotency-Key` obrigatório em `POST /api/reportes` |
 | Rate limiting com 429 | 60 requisições por minuto por usuário e 5 criações de reporte por minuto, com cabeçalho `Retry-After` |
 | Testes unitários e de integração com xUnit | Projeto `tests/CaminhoLivre.Tests`, pastas `Unitarios` e `Integracao` |
@@ -89,6 +90,9 @@ O Swagger abre em `http://localhost:5080/swagger`. No primeiro uso a API cria so
 | `joao@teste.com` | CIDADAO | |
 | `gestor.obras@teste.com` | GESTOR | Secretaria de Obras |
 | `gestor.iluminacao@teste.com` | GESTOR | Iluminação Pública |
+| `cuidadora@teste.com` | CUIDADOR | |
+
+Os usuários de teste existem só no SQLite e usam IDs a partir de 900001, para não coincidir com os IDs da API Java.
 
 O endpoint de token de teste só existe em ambiente de desenvolvimento (ou com `Auth__HabilitarTokenDeTeste=true`). Em produção o token vem do login da API Java.
 
@@ -115,8 +119,9 @@ Nenhuma senha ou chave fica no código. Tudo vem de variáveis de ambiente:
 | `Database__Provider` | `Sqlite`, `Oracle` ou `SqlServer` | `Sqlite` |
 | `ConnectionStrings__Oracle` | Conexão do Oracle do grupo | |
 | `ConnectionStrings__SqlServer` | Conexão do Azure SQL | |
-| `Database__CriarTabelasAoIniciar` | `true` para a API criar as tabelas e os dados iniciais no Oracle ou SQL Server | `false` |
-| `ServicosExternos__ApiJavaHealthUrl` | URL de health da API Java, usada no `/health` | |
+| `Database__CriarTabelasAoIniciar` | `true` para a API criar as tabelas, os órgãos e as categorias no Oracle ou SQL Server (sem usuários de teste: eles vêm da API Java) | `false` |
+| `ServicosExternos__ApiJavaHealthUrl` | URL de health da API Java, usada no `/health` (ex.: `https://<app-java>.azurewebsites.net/actuator/health`) | |
+| `Uploads__Pasta` | Pasta das fotos. No App Service, use `/home/uploads` com `WEBSITES_ENABLE_APP_SERVICE_STORAGE=true`, senão as fotos somem a cada deploy | `uploads` |
 | `RateLimit__RequisicoesPorMinuto` / `RateLimit__ReportesPorMinuto` | Limites do rate limiting | `60` / `5` |
 
 Contrato do token (igual ao da API Java): HS256, emissor `voz-e-via-java`, público `voz-e-via`, claims `sub` (ID do usuário), `name` e `role` (`CIDADAO`, `CUIDADOR` ou `GESTOR`).
@@ -125,18 +130,19 @@ Contrato do token (igual ao da API Java): HS256, emissor `voz-e-via-java`, públ
 
 | Método | Rota | Papel | O que faz |
 |---|---|---|---|
-| POST | `/api/reportes` | CIDADAO | Cria um reporte (exige `Idempotency-Key`) e gera o protocolo `VV-AAAA-NNNNNN` |
-| POST | `/api/fotos` | CIDADAO | Envia a foto (campo `arquivo`, JPEG ou PNG até 5 MB) e devolve `{ fotoUrl }` |
-| GET | `/api/reportes/meus?page=1&size=10` | CIDADAO | Lista os reportes do usuário (página começa em 1, tamanho até 50) |
+| POST | `/api/reportes` | CIDADAO ou CUIDADOR | Cria um reporte (exige `Idempotency-Key`) e gera o protocolo `VV-AAAA-NNNNNN` |
+| POST | `/api/fotos` | CIDADAO ou CUIDADOR | Envia a foto (campo `arquivo`, JPEG ou PNG até 5 MB) e devolve `{ fotoUrl }` |
+| GET | `/api/reportes/meus?page=1&size=10` | CIDADAO ou CUIDADOR | Lista os reportes do usuário (página começa em 1, tamanho até 50) |
 | GET | `/api/reportes/{id}` | dono ou GESTOR do órgão | Detalhe com histórico de status |
-| PUT | `/api/reportes/{id}` | CIDADAO dono | Substitui `descricao`, `endereco` e `fotoUrl` enquanto ABERTO (null = sem endereço / sem foto) |
-| DELETE | `/api/reportes/{id}` | CIDADAO dono | Cancela o reporte enquanto ABERTO |
-| POST | `/api/reportes/{id}/foto` | CIDADAO dono | Alternativa: envia a foto direto para um reporte já criado |
+| PUT | `/api/reportes/{id}` | dono (CIDADAO ou CUIDADOR) | Substitui `descricao`, `endereco` e `fotoUrl` enquanto ABERTO (null = sem endereço / sem foto) |
+| DELETE | `/api/reportes/{id}` | dono (CIDADAO ou CUIDADOR) | Cancela o reporte enquanto ABERTO |
+| POST | `/api/reportes/{id}/foto` | dono (CIDADAO ou CUIDADOR) | Alternativa: envia a foto direto para um reporte já criado |
 | GET | `/api/gestor/reportes?status=&urgencia=&categoria=` | GESTOR | Fila do órgão, ordenada por prioridade |
 | PATCH | `/api/gestor/reportes/{id}/status` | GESTOR | Muda o status seguindo o fluxo e grava o histórico |
 | GET | `/api/categorias` e `/api/categorias/{id}` | autenticado | Lista e consulta categorias |
 | POST, PUT, DELETE | `/api/categorias` | GESTOR | Cria, edita e exclui categorias |
 | GET | `/api/orgaos` | autenticado | Lista os órgãos |
+| DELETE | `/api/usuarios/eu` | CIDADAO ou CUIDADOR | Exclui os dados do usuário nesta API (LGPD): reportes, histórico, fotos e cadastro; o token deixa de valer aqui |
 | GET | `/health` e `/health/live` | público | Saúde da API e das dependências |
 
 ### Regras de negócio
@@ -162,8 +168,10 @@ As chaves ficam na tabela `VV_IDEMPOTENCIA` por 24 horas.
 
 ## Integração com o grupo
 
+- **Exclusão de conta (LGPD):** o app chama `DELETE /api/usuarios/eu` nesta API e depois `DELETE /api/v1/auth/eu` na API Java, com o mesmo token. Cada API apaga os seus dados e passa a recusar o token da conta excluída na hora.
+- **Gestor:** a API Java hoje emite só `CIDADAO` e `CUIDADOR`. Para o painel do gestor funcionar com o login real, a API Java precisa emitir `GESTOR` e o usuário precisa estar ligado ao órgão em `VV_USUARIO.ORGAO_ID`. Em desenvolvimento, use o token de teste.
 - **Mobile:** consome os endpoints acima, enviando o token do login da API Java e o cabeçalho `Idempotency-Key` ao criar reportes. Fluxo da foto: `POST /api/fotos` primeiro e depois o reporte com a `fotoUrl` recebida (só são aceitas URLs geradas pela própria API). Respostas em camelCase, enums como texto (`"ALTA"`, `"ABERTO"`), datas em ISO 8601 UTC e erros no formato ProblemDetails com `detail` em português e `errors` por campo.
-- **Banco de Dados:** `scripts/oracle-tabelas-dotnet.sql` traz as tabelas da API .NET no formato que a API espera, para entrar no script do grupo.
+- **Banco de Dados:** `scripts/oracle-tabelas-dotnet.sql` traz todas as tabelas da API .NET (inclusive `VV_USUARIO` e `VV_CONTA_EXCLUIDA`) no formato que a API espera, para entrar no script do grupo.
 - **DevOps:** `dockerfiles/Dockerfile` publica a API em container; o banco é escolhido por variável de ambiente (Oracle ou Azure SQL); `dotnet test` roda os testes no pipeline. CRUD completo em `VV_REPORTE` e `VV_CATEGORIA`.
 
 ## Uso de IA generativa

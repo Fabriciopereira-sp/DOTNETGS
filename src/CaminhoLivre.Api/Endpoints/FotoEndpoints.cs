@@ -23,7 +23,7 @@ public static class FotoEndpoints
 
                 return Results.Created(fotoUrl, new FotoResponse(fotoUrl));
             })
-            .RequireAuthorization(Politicas.Cidadao)
+            .RequireAuthorization(Politicas.Solicitante)
             .DisableAntiforgery()
             .WithTags("Fotos")
             .WithName("EnviarFoto")
