@@ -46,7 +46,7 @@ public static class GestorEndpoints
                     return Results.ValidationProblem(erros);
                 }
 
-                var orgaoId = await service.BuscarOrgaoDoGestorAsync(user.ObterUsuarioId());
+                var orgaoId = await service.BuscarOrgaoDoGestorAsync(user);
                 if (orgaoId is null)
                 {
                     return Results.Forbid();
@@ -82,7 +82,7 @@ public static class GestorEndpoints
                 }
 
                 var gestorId = user.ObterUsuarioId();
-                var orgaoId = await service.BuscarOrgaoDoGestorAsync(gestorId);
+                var orgaoId = await service.BuscarOrgaoDoGestorAsync(user);
                 if (orgaoId is null)
                 {
                     return Results.Forbid();

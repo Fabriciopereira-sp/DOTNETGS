@@ -15,7 +15,7 @@ public static class ReporteEndpoints
     public static IEndpointRouteBuilder MapReporteEndpoints(this IEndpointRouteBuilder app)
     {
         var grupo = app.MapGroup("/api/reportes")
-            .WithTags("Reportes do cidadão")
+            .WithTags("Reportes do cidadão e do cuidador")
             .WithOpenApi()
             .RequireAuthorization();
 
@@ -96,7 +96,7 @@ public static class ReporteEndpoints
                     throw;
                 }
             })
-            .RequireAuthorization(Politicas.Cidadao)
+            .RequireAuthorization(Politicas.Solicitante)
             .RequireRateLimiting(LimiteDeRequisicoesExtensions.PoliticaCriacaoReporte)
             .WithName("CriarReporte")
             .WithSummary("Registra um novo reporte. Exige o cabeçalho Idempotency-Key: repetir a mesma requisição devolve o mesmo reporte")
@@ -119,18 +119,18 @@ public static class ReporteEndpoints
                 var pagina = await service.ListarDoUsuarioAsync(user.ObterUsuarioId(), page, size);
                 return Results.Ok(pagina);
             })
-            .RequireAuthorization(Politicas.Cidadao)
+            .RequireAuthorization(Politicas.Solicitante)
             .WithName("ListarMeusReportes")
-            .WithSummary("Lista os reportes do cidadão logado, do mais recente para o mais antigo (page começa em 1)")
+            .WithSummary("Lista os reportes do usuário logado (cidadão ou cuidador), do mais recente para o mais antigo (page começa em 1)")
             .Produces<PaginaResponse<ReporteResponse>>(StatusCodes.Status200OK)
             .ProducesValidationProblem()
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status403Forbidden);
 
-        grupo.MapGet("/{id:long}", async (long id, ClaimsPrincipal user, ReporteService service) =>
+        grupo.MapGet("/{id:long}", async (long id, ClaimsPrincipal user, ReporteService service, GestorService gestores) =>
             {
                 var reporte = await service.BuscarCompletoAsync(id);
-                if (reporte is null || !await PodeVerAsync(reporte, user, service))
+                if (reporte is null || !await PodeVerAsync(reporte, user, gestores))
                 {
                     return ReporteNaoEncontrado();
                 }
@@ -183,7 +183,7 @@ public static class ReporteEndpoints
 
                 return Results.Ok(ReporteMapper.ParaDetalhe(reporte));
             })
-            .RequireAuthorization(Politicas.Cidadao)
+            .RequireAuthorization(Politicas.Solicitante)
             .WithName("EditarReporte")
             .WithSummary("Substitui descrição, endereço e foto do próprio reporte enquanto estiver ABERTO (null = sem endereço / sem foto)")
             .Produces<ReporteDetalheResponse>(StatusCodes.Status200OK)
@@ -231,7 +231,7 @@ public static class ReporteEndpoints
 
                 return Results.Ok(ReporteMapper.ParaResponse(reporte));
             })
-            .RequireAuthorization(Politicas.Cidadao)
+            .RequireAuthorization(Politicas.Solicitante)
             .DisableAntiforgery()
             .WithName("EnviarFotoDoReporte")
             .WithSummary("Envia ou troca a foto de um reporte já criado (alternativa ao POST /api/fotos)")
@@ -259,7 +259,7 @@ public static class ReporteEndpoints
                 await service.CancelarAsync(reporte, usuarioId);
                 return Results.NoContent();
             })
-            .RequireAuthorization(Politicas.Cidadao)
+            .RequireAuthorization(Politicas.Solicitante)
             .WithName("CancelarReporte")
             .WithSummary("Cancela o próprio reporte (status CANCELADO) enquanto estiver ABERTO")
             .Produces(StatusCodes.Status204NoContent)
@@ -272,19 +272,16 @@ public static class ReporteEndpoints
     }
 
     // Reporte de outra pessoa responde 404 (e não 403) para não revelar que o ID existe.
-    private static async Task<bool> PodeVerAsync(Reporte reporte, ClaimsPrincipal user, ReporteService service)
+    private static async Task<bool> PodeVerAsync(Reporte reporte, ClaimsPrincipal user, GestorService gestores)
     {
-        var usuarioId = user.ObterUsuarioId();
-
-        if (user.IsInRole(Papeis.Cidadao))
+        if (user.IsInRole(Papeis.Cidadao) || user.IsInRole(Papeis.Cuidador))
         {
-            return reporte.UsuarioId == usuarioId;
+            return reporte.UsuarioId == user.ObterUsuarioId();
         }
 
         if (user.IsInRole(Papeis.Gestor))
         {
-            var gestor = await service.BuscarUsuarioAsync(usuarioId);
-            return gestor?.OrgaoId == reporte.OrgaoId;
+            return await gestores.BuscarOrgaoDoGestorAsync(user) == reporte.OrgaoId;
         }
 
         return false;

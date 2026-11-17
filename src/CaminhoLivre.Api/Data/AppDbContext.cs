@@ -13,12 +13,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Reporte> Reportes => Set<Reporte>();
     public DbSet<HistoricoStatus> HistoricosStatus => Set<HistoricoStatus>();
     public DbSet<RegistroIdempotencia> RegistrosIdempotencia => Set<RegistroIdempotencia>();
+    public DbSet<ContaExcluida> ContasExcluidas => Set<ContaExcluida>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Usuario>(e =>
         {
             e.ToTable("VV_USUARIO");
+            // O ID é o mesmo do usuário na API Java (claim "sub"): nunca é gerado por esta API.
+            // Sem isso, no SQL Server e no Oracle a coluna vira IDENTITY e o registro do usuário vindo do token falha.
+            e.Property(x => x.Id).ValueGeneratedNever();
             e.Property(x => x.Nome).HasMaxLength(120).IsRequired();
             e.Property(x => x.Email).HasMaxLength(150).IsRequired();
             e.Property(x => x.Role).HasMaxLength(20).IsRequired();
@@ -74,6 +78,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasKey(x => new { x.Chave, x.UsuarioId });
             e.Property(x => x.Chave).HasMaxLength(100);
             e.Property(x => x.HashCorpo).HasMaxLength(64).IsRequired();
+        });
+
+        modelBuilder.Entity<ContaExcluida>(e =>
+        {
+            e.ToTable("VV_CONTA_EXCLUIDA");
+            e.HasKey(x => x.UsuarioId);
+            e.Property(x => x.UsuarioId).ValueGeneratedNever();
         });
 
         // Datas são gravadas em UTC. Ao ler, marca como UTC para o JSON sair no formato ISO 8601 com "Z".

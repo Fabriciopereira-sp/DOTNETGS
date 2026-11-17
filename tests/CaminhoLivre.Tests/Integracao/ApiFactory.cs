@@ -29,8 +29,10 @@ public class ApiFactory : WebApplicationFactory<Program>
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
+        // O ID vem da API Java (claim "sub"); aqui simulamos um ID qualquer, como a API Java faria.
         var usuario = new Usuario
         {
+            Id = Random.Shared.NextInt64(10_000_000, 9_000_000_000),
             Nome = $"Usuário de teste {role}",
             Email = $"{Guid.NewGuid():N}@teste.com",
             Role = role,

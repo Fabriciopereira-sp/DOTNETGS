@@ -1,6 +1,8 @@
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using CaminhoLivre.Api.Domain;
+using CaminhoLivre.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 
@@ -35,10 +37,28 @@ public static class AutenticacaoExtensions
                     NameClaimType = "name",
                     RoleClaimType = "role"
                 };
+                // Token de conta excluída (LGPD) deixa de valer na hora, sem esperar a expiração.
+                options.Events = new JwtBearerEvents
+                {
+                    OnTokenValidated = async contexto =>
+                    {
+                        if (!long.TryParse(contexto.Principal?.FindFirstValue("sub"), out var usuarioId))
+                        {
+                            contexto.Fail("Token sem identificação do usuário.");
+                            return;
+                        }
+
+                        var contas = contexto.HttpContext.RequestServices.GetRequiredService<ContaService>();
+                        if (await contas.FoiExcluidaAsync(usuarioId))
+                        {
+                            contexto.Fail("Conta excluída.");
+                        }
+                    }
+                };
             });
 
         builder.Services.AddAuthorizationBuilder()
-            .AddPolicy(Politicas.Cidadao, p => p.RequireRole(Papeis.Cidadao))
+            .AddPolicy(Politicas.Solicitante, p => p.RequireRole(Papeis.Cidadao, Papeis.Cuidador))
             .AddPolicy(Politicas.Gestor, p => p.RequireRole(Papeis.Gestor));
 
         return builder;

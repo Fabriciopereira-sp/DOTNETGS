@@ -17,6 +17,7 @@ builder.Services.AddScoped<ReporteService>();
 builder.Services.AddScoped<GestorService>();
 builder.Services.AddScoped<CategoriaService>();
 builder.Services.AddScoped<IdempotenciaService>();
+builder.Services.AddScoped<ContaService>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddLimiteDeRequisicoes(builder.Configuration);
 
@@ -94,6 +95,7 @@ app.MapCatalogoEndpoints();
 app.MapReporteEndpoints();
 app.MapFotoEndpoints();
 app.MapGestorEndpoints();
+app.MapContaEndpoints();
 app.MapVerificacoesDeSaude();
 
 if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("Auth:HabilitarTokenDeTeste"))

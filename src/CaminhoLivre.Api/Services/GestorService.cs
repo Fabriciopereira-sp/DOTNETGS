@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using CaminhoLivre.Api.Auth;
 using CaminhoLivre.Api.Contracts;
 using CaminhoLivre.Api.Data;
 using CaminhoLivre.Api.Domain;
@@ -9,8 +11,18 @@ public class GestorService(AppDbContext db, TimeProvider relogio)
 {
     private DateTime Agora => relogio.GetUtcNow().UtcDateTime;
 
-    public async Task<long?> BuscarOrgaoDoGestorAsync(long usuarioId) =>
-        (await db.Usuarios.AsNoTracking().FirstOrDefaultAsync(u => u.Id == usuarioId))?.OrgaoId;
+    // O órgão vem do token: a API Java manda a claim "orgao" (OBRAS, ILUMINACAO...) no login do gestor.
+    // Sem a claim (token de teste de desenvolvimento), vale o órgão gravado em VV_USUARIO.
+    public async Task<long?> BuscarOrgaoDoGestorAsync(ClaimsPrincipal gestor)
+    {
+        if (Enum.TryParse<AreaOrgao>(gestor.FindFirstValue("orgao"), ignoreCase: true, out var area))
+        {
+            return await db.Orgaos.AsNoTracking().Where(o => o.Area == area).Select(o => (long?)o.Id).FirstOrDefaultAsync();
+        }
+
+        var usuarioId = gestor.ObterUsuarioId();
+        return (await db.Usuarios.AsNoTracking().FirstOrDefaultAsync(u => u.Id == usuarioId))?.OrgaoId;
+    }
 
     public async Task<PaginaResponse<ReporteResponse>> ListarFilaAsync(
         long orgaoId, StatusReporte? status, Urgencia? urgencia, string? categoria, int pagina, int tamanho)

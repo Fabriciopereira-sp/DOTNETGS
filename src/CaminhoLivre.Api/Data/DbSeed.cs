@@ -3,11 +3,15 @@ using Microsoft.EntityFrameworkCore;
 
 namespace CaminhoLivre.Api.Data;
 
-// Dados iniciais (órgãos, categorias e usuários de teste) usados quando a própria API cria as tabelas.
-// No Oracle do grupo esses dados vêm do script-bd.sql.
+// Dados iniciais usados quando a própria API cria as tabelas. No Oracle do grupo, órgãos e categorias vêm do
+// script-bd.sql.
 public static class DbSeed
 {
-    public static async Task PopularAsync(AppDbContext db)
+    // Usuários de teste só existem no SQLite (desenvolvimento), com IDs reservados bem acima dos gerados pela
+    // API Java. No banco compartilhado, os usuários vêm sempre dos tokens da API Java, com o ID dela.
+    public const long PrimeiroIdDeTeste = 900_001;
+
+    public static async Task PopularAsync(AppDbContext db, bool incluirUsuariosDeTeste)
     {
         if (await db.Orgaos.AnyAsync())
         {
@@ -30,13 +34,17 @@ public static class DbSeed
             new Categoria { Codigo = "LIXO", Nome = "Lixo ou entulho", Orgao = limpeza },
             new Categoria { Codigo = "OUTRO", Nome = "Outro problema", Orgao = obras });
 
-        db.Usuarios.AddRange(
-            new Usuario { Nome = "Maria Souza", Email = "maria@teste.com", Role = Papeis.Cidadao },
-            new Usuario { Nome = "João Lima", Email = "joao@teste.com", Role = Papeis.Cidadao },
-            new Usuario { Nome = "Carlos Gestor Obras", Email = "gestor.obras@teste.com", Role = Papeis.Gestor, Orgao = obras },
-            new Usuario { Nome = "Ana Gestora Iluminação", Email = "gestor.iluminacao@teste.com", Role = Papeis.Gestor, Orgao = iluminacao });
+        if (incluirUsuariosDeTeste)
+        {
+            var id = PrimeiroIdDeTeste;
+            db.Usuarios.AddRange(
+                new Usuario { Id = id++, Nome = "Maria Souza", Email = "maria@teste.com", Role = Papeis.Cidadao },
+                new Usuario { Id = id++, Nome = "João Lima", Email = "joao@teste.com", Role = Papeis.Cidadao },
+                new Usuario { Id = id++, Nome = "Carlos Gestor Obras", Email = "gestor.obras@teste.com", Role = Papeis.Gestor, Orgao = obras },
+                new Usuario { Id = id++, Nome = "Ana Gestora Iluminação", Email = "gestor.iluminacao@teste.com", Role = Papeis.Gestor, Orgao = iluminacao },
+                new Usuario { Id = id, Nome = "Paula Cuidadora", Email = "cuidadora@teste.com", Role = Papeis.Cuidador });
+        }
 
-        // Sem IDs fixos: o banco gera (identity), o que funciona igual em SQLite, Oracle e SQL Server.
         await db.SaveChangesAsync();
     }
 }
