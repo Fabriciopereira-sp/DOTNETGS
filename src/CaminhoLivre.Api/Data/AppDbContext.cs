@@ -58,6 +58,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.Longitude).HasPrecision(9, 6);
             e.Property(x => x.Urgencia).HasConversion<string>().HasMaxLength(10);
             e.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
+            // Concorrência otimista: toda alteração do reporte muda AtualizadoEm, e o UPDATE só vale se o valor
+            // no banco ainda for o que foi lido (ver Infra/ConflitoDeConcorrenciaHandler).
+            e.Property(x => x.AtualizadoEm).IsConcurrencyToken();
             e.HasOne(x => x.Usuario).WithMany().HasForeignKey(x => x.UsuarioId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.Categoria).WithMany().HasForeignKey(x => x.CategoriaId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.Orgao).WithMany().HasForeignKey(x => x.OrgaoId).OnDelete(DeleteBehavior.Restrict);

@@ -25,6 +25,8 @@ public static class FotoEndpoints
             })
             .RequireAuthorization(Politicas.Solicitante)
             .DisableAntiforgery()
+            .RequireRateLimiting(LimiteDeRequisicoesExtensions.PoliticaEnvioFoto)
+            .WithFormOptions(multipartBodyLengthLimit: FotoValidator.TamanhoMaximo + 64 * 1024)
             .WithTags("Fotos")
             .WithName("EnviarFoto")
             .WithSummary("Envia uma foto (JPEG ou PNG, até 5 MB, campo 'arquivo') e devolve a fotoUrl para usar no reporte")

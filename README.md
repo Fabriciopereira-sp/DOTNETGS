@@ -62,7 +62,7 @@ Organização do código (`src/CaminhoLivre.Api`):
 | Minimal API RESTful, validações, códigos HTTP e Swagger | Endpoints em `Endpoints/`, validações em `Validation/`, respostas 200, 201, 204, 400, 401, 403, 404, 409, 422 e 429 documentadas no Swagger |
 | JWT protegendo endpoints | Políticas `Solicitante` (CIDADAO ou CUIDADOR) e `Gestor`; o token é validado (assinatura, emissor, público, validade e se a conta foi excluída) |
 | Idempotência | Cabeçalho `Idempotency-Key` obrigatório em `POST /api/reportes` |
-| Rate limiting com 429 | 60 requisições por minuto por usuário e 5 criações de reporte por minuto, com cabeçalho `Retry-After` |
+| Rate limiting com 429 | 60 requisições por minuto por usuário, 5 criações de reporte e 10 envios de foto por minuto, com cabeçalho `Retry-After` |
 | Testes unitários e de integração com xUnit | Projeto `tests/CaminhoLivre.Tests`, pastas `Unitarios` e `Integracao` |
 | Health checks | `/health` verifica banco, armazenamento de fotos e a API Java (serviço externo) |
 
@@ -122,7 +122,7 @@ Nenhuma senha ou chave fica no código. Tudo vem de variáveis de ambiente:
 | `Database__CriarTabelasAoIniciar` | `true` para a API criar as tabelas, os órgãos e as categorias no Oracle ou SQL Server (sem usuários de teste: eles vêm da API Java) | `false` |
 | `ServicosExternos__ApiJavaHealthUrl` | URL de health da API Java, usada no `/health` (ex.: `https://<app-java>.azurewebsites.net/actuator/health`) | |
 | `Uploads__Pasta` | Pasta das fotos. No App Service, use `/home/uploads` com `WEBSITES_ENABLE_APP_SERVICE_STORAGE=true`, senão as fotos somem a cada deploy | `uploads` |
-| `RateLimit__RequisicoesPorMinuto` / `RateLimit__ReportesPorMinuto` | Limites do rate limiting | `60` / `5` |
+| `RateLimit__RequisicoesPorMinuto` / `RateLimit__ReportesPorMinuto` / `RateLimit__FotosPorMinuto` | Limites do rate limiting | `60` / `5` / `10` |
 
 Contrato do token (igual ao da API Java): HS256, emissor `voz-e-via-java`, público `voz-e-via`, claims `sub` (ID do usuário), `name`, `role` (`CIDADAO`, `CUIDADOR` ou `GESTOR`) e, só para o gestor, `orgao`.
 
@@ -140,7 +140,7 @@ Contrato do token (igual ao da API Java): HS256, emissor `voz-e-via-java`, públ
 | GET | `/api/gestor/reportes?status=&urgencia=&categoria=` | GESTOR | Fila do órgão, ordenada por prioridade |
 | PATCH | `/api/gestor/reportes/{id}/status` | GESTOR | Muda o status seguindo o fluxo e grava o histórico |
 | GET | `/api/categorias` e `/api/categorias/{id}` | autenticado | Lista e consulta categorias |
-| POST, PUT, DELETE | `/api/categorias` | GESTOR | Cria, edita e exclui categorias |
+| POST, PUT, DELETE | `/api/categorias` | GESTOR | Cria, edita e exclui categorias **do próprio órgão** (outro órgão: 403) |
 | GET | `/api/orgaos` | autenticado | Lista os órgãos |
 | DELETE | `/api/usuarios/eu` | CIDADAO ou CUIDADOR | Exclui os dados do usuário nesta API (LGPD): reportes, histórico, fotos e cadastro; o token deixa de valer aqui |
 | GET | `/health` e `/health/live` | público | Saúde da API e das dependências |
@@ -150,6 +150,8 @@ Contrato do token (igual ao da API Java): HS256, emissor `voz-e-via-java`, públ
 - **Fluxo de status:** ABERTO, EM_ANALISE, EM_EXECUCAO, RESOLVIDO. O cidadão pode cancelar enquanto está ABERTO. Pular ou voltar etapa responde 409.
 - **Prioridade:** peso da urgência (ALTA 100, MEDIA 50, BAIXA 10) mais 2 pontos por dia em aberto, até 30 dias. Assim um reporte antigo não fica esquecido no fim da fila.
 - **Privacidade:** pedir o reporte de outra pessoa responde 404, para não revelar que o ID existe.
+- **Foto:** cada foto pertence a um reporte só. Usar a `fotoUrl` que já está em outro reporte responde 409 (trocar a foto de um reporte apaga o arquivo antigo, então ele não pode ser compartilhado). As fotos são servidas com `X-Content-Type-Options: nosniff` e `Content-Security-Policy: sandbox`.
+- **Alteração simultânea:** se duas pessoas alteram o mesmo reporte ao mesmo tempo (ex.: o gestor muda o status enquanto o cidadão cancela), quem gravar por último recebe 409 em vez de sobrescrever a mudança do outro (concorrência otimista em `AtualizadoEm`).
 
 ### Idempotência
 

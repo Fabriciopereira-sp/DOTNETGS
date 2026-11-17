@@ -43,7 +43,7 @@ public class GestorService(AppDbContext db, TimeProvider relogio)
 
         if (!string.IsNullOrWhiteSpace(categoria))
         {
-            var codigo = categoria.Trim().ToUpper();
+            var codigo = CategoriaService.NormalizarCodigo(categoria);
             consulta = consulta.Where(r => r.Categoria!.Codigo == codigo);
         }
 
@@ -101,6 +101,14 @@ public class GestorService(AppDbContext db, TimeProvider relogio)
             reporte.Prioridade = RegrasReporte.CalcularPrioridade(reporte.Urgencia, reporte.CriadoEm, agora);
         }
 
-        await db.SaveChangesAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Algum reporte mudou enquanto a fila era montada: a prioridade é recalculada na próxima consulta.
+            db.ChangeTracker.Clear();
+        }
     }
 }

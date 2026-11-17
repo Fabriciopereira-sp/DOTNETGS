@@ -7,13 +7,16 @@ namespace CaminhoLivre.Api.Infra;
 public static class LimiteDeRequisicoesExtensions
 {
     public const string PoliticaCriacaoReporte = "criacao-reporte";
+    public const string PoliticaEnvioFoto = "envio-foto";
 
     // Limites por usuário (ou por IP quando não há login), em janelas de 1 minuto.
-    // Geral: 60 requisições por minuto. Criação de reporte: 5 por minuto.
+    // Geral: 60 requisições por minuto. Criação de reporte: 5 por minuto. Envio de foto: 10 por minuto
+    // (cada foto ocupa até 5 MB em disco, então o limite geral sozinho deixaria encher o armazenamento).
     public static IServiceCollection AddLimiteDeRequisicoes(this IServiceCollection services, IConfiguration config)
     {
         var limiteGeral = config.GetValue("RateLimit:RequisicoesPorMinuto", 60);
         var limiteReportes = config.GetValue("RateLimit:ReportesPorMinuto", 5);
+        var limiteFotos = config.GetValue("RateLimit:FotosPorMinuto", 10);
 
         services.AddRateLimiter(options =>
         {
@@ -24,6 +27,9 @@ public static class LimiteDeRequisicoesExtensions
 
             options.AddPolicy(PoliticaCriacaoReporte, http =>
                 RateLimitPartition.GetFixedWindowLimiter(IdentificarCliente(http), _ => Janela(limiteReportes)));
+
+            options.AddPolicy(PoliticaEnvioFoto, http =>
+                RateLimitPartition.GetFixedWindowLimiter(IdentificarCliente(http), _ => Janela(limiteFotos)));
 
             options.OnRejected = async (contexto, cancellationToken) =>
             {

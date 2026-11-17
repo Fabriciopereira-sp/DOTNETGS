@@ -29,22 +29,52 @@ public class CategoriaService(AppDbContext db)
     public Task<bool> PossuiReportesAsync(long categoriaId) =>
         db.Reportes.AnyAsync(r => r.CategoriaId == categoriaId);
 
-    public async Task<Categoria> CriarAsync(CategoriaRequest request)
+    // Devolve null se outro pedido gravou o mesmo código entre a validação e o insert (índice único).
+    public async Task<Categoria?> CriarAsync(CategoriaRequest request)
     {
         var categoria = new Categoria();
         Preencher(categoria, request);
 
         db.Categorias.Add(categoria);
-        await db.SaveChangesAsync();
+        if (!await SalvarSemCodigoRepetidoAsync(categoria.Codigo, null))
+        {
+            return null;
+        }
+
         await db.Entry(categoria).Reference(c => c.Orgao).LoadAsync();
         return categoria;
     }
 
-    public async Task AtualizarAsync(Categoria categoria, CategoriaRequest request)
+    // Devolve false se o código passou a ser de outra categoria entre a validação e o update.
+    public async Task<bool> AtualizarAsync(Categoria categoria, CategoriaRequest request)
     {
         Preencher(categoria, request);
-        await db.SaveChangesAsync();
+        if (!await SalvarSemCodigoRepetidoAsync(categoria.Codigo, categoria.Id))
+        {
+            return false;
+        }
+
         await db.Entry(categoria).Reference(c => c.Orgao).LoadAsync();
+        return true;
+    }
+
+    private async Task<bool> SalvarSemCodigoRepetidoAsync(string codigo, long? idAtual)
+    {
+        try
+        {
+            await db.SaveChangesAsync();
+            return true;
+        }
+        catch (DbUpdateException)
+        {
+            db.ChangeTracker.Clear();
+            if (await CodigoEmUsoAsync(codigo, idAtual))
+            {
+                return false;
+            }
+
+            throw;
+        }
     }
 
     public async Task ExcluirAsync(Categoria categoria)
