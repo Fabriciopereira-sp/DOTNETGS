@@ -1,0 +1,49 @@
+# Compila e roda os testes (unitários e de integração) a cada pull request e a cada push na main.
+# Não publica nada: o deploy na Azure é feito pelo scripts/provisionar-azure.sh do repositório da API Java.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-e-testes:
+    name: Build e testes
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restaurar dependências
+        run: dotnet restore CaminhoLivre.sln
+
+      - name: Compilar
+        run: dotnet build CaminhoLivre.sln --no-restore -c Release
+
+      - name: Testes
+        run: >
+          dotnet test CaminhoLivre.sln --no-build -c Release
+          --logger "trx;LogFileName=resultados.trx"
+          --collect "XPlat Code Coverage"
+          --results-directory TestResults
+
+      - name: Publicar resultados dos testes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resultados-dos-testes
+          path: TestResults
+          retention-days: 14
