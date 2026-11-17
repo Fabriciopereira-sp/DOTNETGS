@@ -11,9 +11,15 @@ public class ReporteService(AppDbContext db, TimeProvider relogio)
 {
     private DateTime Agora => relogio.GetUtcNow().UtcDateTime;
 
-    public Task<Categoria?> BuscarCategoriaAsync(string codigo) =>
-        db.Categorias.Include(c => c.Orgao)
-            .FirstOrDefaultAsync(c => c.Codigo == codigo.Trim().ToUpper());
+    public Task<Categoria?> BuscarCategoriaAsync(string codigo)
+    {
+        var normalizado = CategoriaService.NormalizarCodigo(codigo);
+        return db.Categorias.Include(c => c.Orgao).FirstOrDefaultAsync(c => c.Codigo == normalizado);
+    }
+
+    // Cada foto pertence a um reporte só: trocar a foto de um reporte apaga o arquivo antigo do disco.
+    public Task<bool> FotoEmUsoAsync(string fotoUrl, long? ignorarReporteId = null) =>
+        db.Reportes.AnyAsync(r => r.FotoUrl == fotoUrl && r.Id != ignorarReporteId);
 
     public Task<Usuario?> BuscarUsuarioAsync(long usuarioId) =>
         db.Usuarios.AsNoTracking().FirstOrDefaultAsync(u => u.Id == usuarioId);

@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using CaminhoLivre.Api.Auth;
 using CaminhoLivre.Api.Contracts;
 using CaminhoLivre.Api.Data;
@@ -42,7 +43,7 @@ public static class CatalogoEndpoints
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status404NotFound);
 
-        grupo.MapPost("/categorias", async (CategoriaRequest request, CategoriaService service) =>
+        grupo.MapPost("/categorias", async (CategoriaRequest request, ClaimsPrincipal user, CategoriaService service, GestorService gestores) =>
             {
                 var erro = await ValidarAsync(request, service, null);
                 if (erro is not null)
@@ -50,8 +51,14 @@ public static class CatalogoEndpoints
                     return erro;
                 }
 
-                var categoria = await service.CriarAsync(request);
-                return Results.Created($"/api/categorias/{categoria.Id}", CategoriaService.ParaResponse(categoria));
+                if (!await EhDoOrgaoDoGestorAsync(user, gestores, request.OrgaoId!.Value))
+                {
+                    return Proibido();
+                }
+
+                return await service.CriarAsync(request) is { } categoria
+                    ? Results.Created($"/api/categorias/{categoria.Id}", CategoriaService.ParaResponse(categoria))
+                    : CodigoJaCadastrado();
             })
             .RequireAuthorization(Politicas.Gestor)
             .WithName("CriarCategoria")
@@ -62,7 +69,7 @@ public static class CatalogoEndpoints
             .Produces(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status409Conflict);
 
-        grupo.MapPut("/categorias/{id:long}", async (long id, CategoriaRequest request, CategoriaService service) =>
+        grupo.MapPut("/categorias/{id:long}", async (long id, CategoriaRequest request, ClaimsPrincipal user, CategoriaService service, GestorService gestores) =>
             {
                 var categoria = await service.BuscarAsync(id);
                 if (categoria is null)
@@ -76,8 +83,16 @@ public static class CatalogoEndpoints
                     return erro;
                 }
 
-                await service.AtualizarAsync(categoria, request);
-                return Results.Ok(CategoriaService.ParaResponse(categoria));
+                // O gestor só mexe nas categorias do próprio órgão, e não pode passá-las para outro órgão.
+                if (!await EhDoOrgaoDoGestorAsync(user, gestores, categoria.OrgaoId)
+                    || !await EhDoOrgaoDoGestorAsync(user, gestores, request.OrgaoId!.Value))
+                {
+                    return Proibido();
+                }
+
+                return await service.AtualizarAsync(categoria, request)
+                    ? Results.Ok(CategoriaService.ParaResponse(categoria))
+                    : CodigoJaCadastrado();
             })
             .RequireAuthorization(Politicas.Gestor)
             .WithName("AtualizarCategoria")
@@ -89,12 +104,17 @@ public static class CatalogoEndpoints
             .Produces(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
 
-        grupo.MapDelete("/categorias/{id:long}", async (long id, CategoriaService service) =>
+        grupo.MapDelete("/categorias/{id:long}", async (long id, ClaimsPrincipal user, CategoriaService service, GestorService gestores) =>
             {
                 var categoria = await service.BuscarAsync(id);
                 if (categoria is null)
                 {
                     return Respostas.NaoEncontrado("Categoria não encontrada.");
+                }
+
+                if (!await EhDoOrgaoDoGestorAsync(user, gestores, categoria.OrgaoId))
+                {
+                    return Proibido();
                 }
 
                 if (await service.PossuiReportesAsync(id))
@@ -138,12 +158,24 @@ public static class CatalogoEndpoints
 
         if (await service.CodigoEmUsoAsync(CategoriaService.NormalizarCodigo(request.Codigo), idAtual))
         {
-            return Results.Problem(
-                statusCode: StatusCodes.Status409Conflict,
-                title: "Código já cadastrado",
-                detail: "Já existe uma categoria com esse código.");
+            return CodigoJaCadastrado();
         }
 
         return null;
     }
+
+    private static async Task<bool> EhDoOrgaoDoGestorAsync(ClaimsPrincipal user, GestorService gestores, long orgaoId) =>
+        await gestores.BuscarOrgaoDoGestorAsync(user) == orgaoId;
+
+    private static IResult Proibido() =>
+        Results.Problem(
+            statusCode: StatusCodes.Status403Forbidden,
+            title: "Fora do seu órgão",
+            detail: "O gestor só cria, edita e exclui categorias do próprio órgão.");
+
+    private static IResult CodigoJaCadastrado() =>
+        Results.Problem(
+            statusCode: StatusCodes.Status409Conflict,
+            title: "Código já cadastrado",
+            detail: "Já existe uma categoria com esse código.");
 }

@@ -83,6 +83,13 @@ public static class ReporteEndpoints
                             "Requisição em processamento");
                 }
 
+                // Depois da idempotência: num reenvio, a foto já é do próprio reporte e a resposta é a original.
+                if (request.FotoUrl is not null && await service.FotoEmUsoAsync(request.FotoUrl))
+                {
+                    await idempotencia.LiberarAsync(reserva.Registro!);
+                    return FotoDeOutroReporte();
+                }
+
                 try
                 {
                     var reporte = await service.CriarAsync(usuarioId, categoria, request);
@@ -173,6 +180,11 @@ public static class ReporteEndpoints
                     return erroFoto;
                 }
 
+                if (request.FotoUrl is not null && await service.FotoEmUsoAsync(request.FotoUrl, reporte.Id))
+                {
+                    return FotoDeOutroReporte();
+                }
+
                 var fotoAnterior = reporte.FotoUrl;
                 await service.AtualizarAsync(reporte, request);
 
@@ -222,7 +234,16 @@ public static class ReporteEndpoints
                 var novaUrl = await armazenamento.SalvarAsync(conteudo, extensao!, cancellationToken);
 
                 var urlAnterior = reporte.FotoUrl;
-                await service.DefinirFotoAsync(reporte, novaUrl);
+                try
+                {
+                    await service.DefinirFotoAsync(reporte, novaUrl);
+                }
+                catch
+                {
+                    // Sem gravar no reporte, a foto nova não teria dono: sai do disco.
+                    await armazenamento.ExcluirAsync(novaUrl, cancellationToken);
+                    throw;
+                }
 
                 if (urlAnterior is not null)
                 {
@@ -233,6 +254,8 @@ public static class ReporteEndpoints
             })
             .RequireAuthorization(Politicas.Solicitante)
             .DisableAntiforgery()
+            .RequireRateLimiting(LimiteDeRequisicoesExtensions.PoliticaEnvioFoto)
+            .WithFormOptions(multipartBodyLengthLimit: FotoValidator.TamanhoMaximo + 64 * 1024)
             .WithName("EnviarFotoDoReporte")
             .WithSummary("Envia ou troca a foto de um reporte já criado (alternativa ao POST /api/fotos)")
             .Produces<ReporteResponse>(StatusCodes.Status200OK)
@@ -286,6 +309,9 @@ public static class ReporteEndpoints
 
         return false;
     }
+
+    private static IResult FotoDeOutroReporte() =>
+        Respostas.Conflito("Esta foto já está em outro reporte. Envie a imagem de novo em POST /api/fotos.", "Foto já usada");
 
     private static IResult? FotoInexistente(string? fotoUrl, IArmazenamentoDeFotos armazenamento) =>
         fotoUrl is not null && !armazenamento.Existe(fotoUrl)

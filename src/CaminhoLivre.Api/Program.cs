@@ -28,6 +28,7 @@ builder.Services.AddSingleton<IArmazenamentoDeFotos>(new ArmazenamentoLocalDeFot
 builder.Services.AddVerificacoesDeSaude(pastaDeFotos);
 
 // Erros sempre no formato ProblemDetails (RFC 7807). Fora de desenvolvimento, sem stack trace para o usuário.
+builder.Services.AddExceptionHandler<ConflitoDeConcorrenciaHandler>();
 builder.Services.AddProblemDetails();
 
 // JSON em camelCase (padrão) e enums sempre como texto ("ALTA", "ABERTO").
@@ -76,7 +77,14 @@ app.UseStatusCodePages();
 app.UseStaticFiles(new StaticFileOptions
 {
     FileProvider = new PhysicalFileProvider(pastaDeFotos),
-    RequestPath = ArmazenamentoLocalDeFotos.CaminhoPublico
+    RequestPath = ArmazenamentoLocalDeFotos.CaminhoPublico,
+    // A foto é conferida pelos primeiros bytes, mas o resto do arquivo é do usuário: o navegador não pode
+    // "adivinhar" outro tipo (ex.: HTML) nem executar nada dele.
+    OnPrepareResponse = contexto =>
+    {
+        contexto.Context.Response.Headers.XContentTypeOptions = "nosniff";
+        contexto.Context.Response.Headers.ContentSecurityPolicy = "default-src 'none'; sandbox";
+    }
 });
 
 app.UseSwagger();
