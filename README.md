@@ -124,7 +124,7 @@ Nenhuma senha ou chave fica no código. Tudo vem de variáveis de ambiente:
 | `Uploads__Pasta` | Pasta das fotos. No App Service, use `/home/uploads` com `WEBSITES_ENABLE_APP_SERVICE_STORAGE=true`, senão as fotos somem a cada deploy | `uploads` |
 | `RateLimit__RequisicoesPorMinuto` / `RateLimit__ReportesPorMinuto` | Limites do rate limiting | `60` / `5` |
 
-Contrato do token (igual ao da API Java): HS256, emissor `voz-e-via-java`, público `voz-e-via`, claims `sub` (ID do usuário), `name` e `role` (`CIDADAO`, `CUIDADOR` ou `GESTOR`).
+Contrato do token (igual ao da API Java): HS256, emissor `voz-e-via-java`, público `voz-e-via`, claims `sub` (ID do usuário), `name`, `role` (`CIDADAO`, `CUIDADOR` ou `GESTOR`) e, só para o gestor, `orgao`.
 
 ## Endpoints
 
@@ -169,7 +169,7 @@ As chaves ficam na tabela `VV_IDEMPOTENCIA` por 24 horas.
 ## Integração com o grupo
 
 - **Exclusão de conta (LGPD):** o app chama `DELETE /api/usuarios/eu` nesta API e depois `DELETE /api/v1/auth/eu` na API Java, com o mesmo token. Cada API apaga os seus dados e passa a recusar o token da conta excluída na hora.
-- **Gestor:** a API Java hoje emite só `CIDADAO` e `CUIDADOR`. Para o painel do gestor funcionar com o login real, a API Java precisa emitir `GESTOR` e o usuário precisa estar ligado ao órgão em `VV_USUARIO.ORGAO_ID`. Em desenvolvimento, use o token de teste.
+- **Gestor:** a API Java emite `role: GESTOR` e a claim `orgao` (`OBRAS`, `ILUMINACAO`, `MOBILIDADE` ou `LIMPEZA`) para as contas de gestor, que não têm cadastro público (na demonstração: `gestor.obras@vozviva.dev` e `gestor.iluminacao@vozviva.dev`). Esta API monta a fila e libera o detalhe dos reportes pelo órgão do token. Sem a claim (token de teste de desenvolvimento), vale `VV_USUARIO.ORGAO_ID`.
 - **Mobile:** consome os endpoints acima, enviando o token do login da API Java e o cabeçalho `Idempotency-Key` ao criar reportes. Fluxo da foto: `POST /api/fotos` primeiro e depois o reporte com a `fotoUrl` recebida (só são aceitas URLs geradas pela própria API). Respostas em camelCase, enums como texto (`"ALTA"`, `"ABERTO"`), datas em ISO 8601 UTC e erros no formato ProblemDetails com `detail` em português e `errors` por campo.
 - **Banco de Dados:** `scripts/oracle-tabelas-dotnet.sql` traz todas as tabelas da API .NET (inclusive `VV_USUARIO` e `VV_CONTA_EXCLUIDA`) no formato que a API espera, para entrar no script do grupo.
 - **DevOps:** `dockerfiles/Dockerfile` publica a API em container; o banco é escolhido por variável de ambiente (Oracle ou Azure SQL); `dotnet test` roda os testes no pipeline. CRUD completo em `VV_REPORTE` e `VV_CATEGORIA`.

@@ -127,10 +127,10 @@ public static class ReporteEndpoints
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status403Forbidden);
 
-        grupo.MapGet("/{id:long}", async (long id, ClaimsPrincipal user, ReporteService service) =>
+        grupo.MapGet("/{id:long}", async (long id, ClaimsPrincipal user, ReporteService service, GestorService gestores) =>
             {
                 var reporte = await service.BuscarCompletoAsync(id);
-                if (reporte is null || !await PodeVerAsync(reporte, user, service))
+                if (reporte is null || !await PodeVerAsync(reporte, user, gestores))
                 {
                     return ReporteNaoEncontrado();
                 }
@@ -272,19 +272,16 @@ public static class ReporteEndpoints
     }
 
     // Reporte de outra pessoa responde 404 (e não 403) para não revelar que o ID existe.
-    private static async Task<bool> PodeVerAsync(Reporte reporte, ClaimsPrincipal user, ReporteService service)
+    private static async Task<bool> PodeVerAsync(Reporte reporte, ClaimsPrincipal user, GestorService gestores)
     {
-        var usuarioId = user.ObterUsuarioId();
-
         if (user.IsInRole(Papeis.Cidadao) || user.IsInRole(Papeis.Cuidador))
         {
-            return reporte.UsuarioId == usuarioId;
+            return reporte.UsuarioId == user.ObterUsuarioId();
         }
 
         if (user.IsInRole(Papeis.Gestor))
         {
-            var gestor = await service.BuscarUsuarioAsync(usuarioId);
-            return gestor?.OrgaoId == reporte.OrgaoId;
+            return await gestores.BuscarOrgaoDoGestorAsync(user) == reporte.OrgaoId;
         }
 
         return false;
